@@ -1,17 +1,18 @@
+use std::time::Duration;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use vulkano::swapchain::{PresentMode, SurfaceTransform, AcquireError, SwapchainCreationError, Surface};
 use winit::{ElementState, MouseButton, Event, DeviceEvent, WindowEvent, KeyboardInput, VirtualKeyCode, EventsLoop, WindowBuilder, Window};
-use ammolite::{Ammolite, XrInstance, XrVkSession, HandleEventsCommand};
+use ammolite::{Ammolite, CameraTransforms, XrInstance, XrVkSession, HandleEventsCommand};
 use ammolite::swapchain::Swapchain;
-use ammolite::camera::{Camera, PitchYawCamera3};
+use ammolite::camera::{self, Camera, PitchYawCamera3};
 use smallvec::SmallVec;
 
 pub enum MediumData {
     Window {
-        window: Arc<Surface<Window>>,
         window_events_loop: Rc<RefCell<EventsLoop>>,
         mouse_delta: [f64; 2],
         camera: Box<dyn Camera>,
@@ -27,12 +28,9 @@ pub enum MediumData {
 
 impl MediumData {
     pub fn new_window(
-        window: Arc<Surface<Window>>,
         window_events_loop: Rc<RefCell<EventsLoop>>,
-        swapchain: Arc<dyn Swapchain>,
     ) -> Self {
         Self::Window {
-            window,
             window_events_loop,
             mouse_delta: [0.0; 2],
             camera: Box::new(PitchYawCamera3::new()),
@@ -44,10 +42,34 @@ impl MediumData {
 }
 
 impl ammolite::MediumData for MediumData {
-    fn handle_events(&mut self) -> SmallVec<[HandleEventsCommand; 8]> {
+    fn get_camera_transforms(&self, view_index: usize, dimensions: [NonZeroU32; 2]) -> CameraTransforms {
         match self {
             Self::Window {
-                window,
+                window_events_loop,
+                mouse_delta,
+                camera,
+                pressed_keys,
+                pressed_mouse_buttons,
+                cursor_capture,
+            } => {
+                CameraTransforms {
+                    position: camera.get_position(),
+                    view_matrix: camera.get_view_matrix(),
+                    projection_matrix: camera::construct_perspective_projection_matrix(
+                        0.001,
+                        1000.0,
+                        dimensions[0].get() as f32 / dimensions[1].get() as f32,
+                        std::f32::consts::FRAC_PI_2,
+                    ),
+                }
+            },
+            _ => unimplemented!(),
+        }
+    }
+
+    fn handle_events(&mut self, delta_time: &Duration) -> SmallVec<[HandleEventsCommand; 8]> {
+        match self {
+            Self::Window {
                 window_events_loop,
                 mouse_delta,
                 camera,
@@ -142,17 +164,14 @@ impl ammolite::MediumData for MediumData {
                             event: WindowEvent::Resized(_),
                             ..
                         } => {
-                            result.push(HandleEventsCommand::RecreateSwapchains);
-                            // TODO: recreate only actual window swapchains, not HMD ones?
-                            // for view_swapchain in &ammolite.view_swapchains.inner[..] {
-                            //     let mut view_swapchain = view_swapchain.write().unwrap();
-                            //     view_swapchain.recreate = true;
-                            // }
+                            result.push(HandleEventsCommand::RecreateSwapchain(0));
                         }
 
                         _ => ()
                     }
                 });
+
+                camera.update(delta_time, &mouse_delta, &pressed_keys, &pressed_mouse_buttons);
 
                 result
             },
