@@ -9,22 +9,28 @@ use winit::{ElementState, MouseButton, Event, DeviceEvent, WindowEvent, Keyboard
 use ammolite::{View, Ammolite, CameraTransforms, XrInstance, XrVkSession, HandleEventsCommand, MediumSpecificHandleEventsCommand};
 use ammolite::swapchain::Swapchain;
 use ammolite::camera::{self, Camera, PitchYawCamera3};
-use ammolite::mat4;
-use ammolite::math::Mat4;
+use ammolite_math::{mat4, Mat4};
 use smallvec::SmallVec;
 use openxr::{self as xr, ViewConfigurationType, EventDataBuffer};
 
-pub enum MediumData {
+pub struct MediumData {
+    pub uniform: UniformMediumData,
+    pub specialized: SpecializedMediumData,
+}
+
+pub struct UniformMediumData {
+    camera: Rc<RefCell<dyn Camera>>,
+}
+
+pub enum SpecializedMediumData {
     Window {
         window: Option<Arc<Surface<Window>>>,
         window_events_loop: Rc<RefCell<EventsLoop>>,
-        camera: Box<dyn Camera>,
         pressed_keys: HashSet<VirtualKeyCode>,
         pressed_mouse_buttons: HashSet<MouseButton>,
         cursor_capture: bool,
     },
     Xr {
-        camera: Box<dyn Camera>,
         xr_instance: Option<Arc<XrInstance>>,
         xr_vk_session: Option<XrVkSession>,
     },
@@ -32,12 +38,42 @@ pub enum MediumData {
 
 impl MediumData {
     pub fn new_window(
+        camera: Rc<RefCell<dyn Camera>>,
+        window_events_loop: Rc<RefCell<EventsLoop>>,
+    ) -> Self {
+        Self {
+            uniform: UniformMediumData::new(camera),
+            specialized: SpecializedMediumData::new_window(window_events_loop),
+        }
+    }
+
+    pub fn new_stereo_hmd(
+        camera: Rc<RefCell<dyn Camera>>,
+    ) -> Self {
+        Self {
+            uniform: UniformMediumData::new(camera),
+            specialized: SpecializedMediumData::new_stereo_hmd(),
+        }
+    }
+}
+
+impl UniformMediumData {
+    pub fn new(
+        camera: Rc<RefCell<dyn Camera>>,
+    ) -> Self {
+        Self {
+            camera,
+        }
+    }
+}
+
+impl SpecializedMediumData {
+    pub fn new_window(
         window_events_loop: Rc<RefCell<EventsLoop>>,
     ) -> Self {
         Self::Window {
             window: None,
             window_events_loop,
-            camera: Box::new(PitchYawCamera3::new()),
             pressed_keys: HashSet::new(),
             pressed_mouse_buttons: HashSet::new(),
             cursor_capture: true,
@@ -48,72 +84,57 @@ impl MediumData {
         Self::Xr {
             xr_instance: None,
             xr_vk_session: None,
-            camera: Box::new(PitchYawCamera3::new()),
         }
     }
 }
 
 impl ammolite::MediumData for MediumData {
     fn get_camera_transforms(&self, view_index: usize, view: &View, dimensions: [NonZeroU32; 2]) -> CameraTransforms {
-        println!("view: {:?}", view);
-        match self {
-            Self::Window {
-                window,
-                window_events_loop,
-                camera,
-                pressed_keys,
-                pressed_mouse_buttons,
-                cursor_capture,
-            } => {
-                CameraTransforms {
-                    position: camera.get_position(),
-                    view_matrix: camera.get_view_matrix(),
-                    projection_matrix: camera::construct_perspective_projection_matrix(
-                        0.001,
-                        1000.0,
-                        dimensions[0].get() as f32 / dimensions[1].get() as f32,
-                        std::f32::consts::FRAC_PI_2,
-                    ),
-                }
-            },
-            Self::Xr {
-                camera,
-                xr_instance,
-                xr_vk_session,
-            } => {
-                let world_space_display_view_matrix =
-                    view.pose.orientation.clone().to_homogeneous()
-                  * mat4!([1.0, 0.0, 0.0, -view.pose.position[0],
-                           0.0, 1.0, 0.0, view.pose.position[1],
-                           0.0, 0.0, 1.0, view.pose.position[2],
-                           0.0, 0.0, 0.0, 1.0])
-                  * camera.get_view_matrix();
+        let &MediumData {
+            ref uniform,
+            ref specialized,
+        } = &self;
+        let camera = &uniform.camera;
 
-                // dbg!(&world_space_display_position);
-                dbg!(&world_space_display_view_matrix);
+        dbg!(&view.pose.orientation);
+        dbg!(&view.pose.position);
 
-                CameraTransforms {
-                    position: camera.get_position(),
-                    view_matrix: world_space_display_view_matrix,
-                    projection_matrix: camera::construct_perspective_projection_matrix_asymmetric(
-                        0.001,
-                        1000.0,
-                        view.fov.angle_right,
-                        view.fov.angle_up,
-                        view.fov.angle_left,
-                        view.fov.angle_down,
-                    ),
-                }
-            },
+        let world_space_display_view_matrix =
+            view.pose.orientation.clone().to_homogeneous()
+          * mat4!([1.0, 0.0, 0.0, view.pose.position[0],
+                   0.0, 1.0, 0.0, view.pose.position[1],
+                   0.0, 0.0, 1.0, view.pose.position[2],
+                   0.0, 0.0, 0.0, 1.0])
+          * camera.borrow().get_view_matrix();
+
+        let position = -(view.pose.orientation.clone().to_homogeneous()
+            * view.pose.position.clone())
+            + camera.borrow().get_position();
+
+        CameraTransforms {
+            position,
+            view_matrix: world_space_display_view_matrix,
+            projection_matrix: camera::construct_perspective_projection_matrix_asymmetric(
+                0.001,
+                1000.0,
+                view.fov.angle_right,
+                view.fov.angle_up,
+                view.fov.angle_left,
+                view.fov.angle_down,
+            ),
         }
     }
 
     fn handle_events(&mut self, delta_time: &Duration) -> SmallVec<[HandleEventsCommand; 8]> {
-        match self {
-            Self::Window {
+        let &mut MediumData {
+            ref mut uniform,
+            ref mut specialized,
+        } = self;
+
+        match specialized {
+            SpecializedMediumData::Window {
                 window,
                 window_events_loop,
-                camera,
                 pressed_keys,
                 pressed_mouse_buttons,
                 cursor_capture,
@@ -210,12 +231,11 @@ impl ammolite::MediumData for MediumData {
                     }
                 });
 
-                camera.update(delta_time, &mouse_delta, &pressed_keys, &pressed_mouse_buttons);
+                uniform.camera.borrow_mut().update(delta_time, &mouse_delta, &pressed_keys, &pressed_mouse_buttons);
 
                 result
             },
-            Self::Xr {
-                camera,
+            SpecializedMediumData::Xr {
                 xr_instance,
                 xr_vk_session,
             } => {

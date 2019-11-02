@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 ammolite = { path = "../ammolite" }
+ammolite-math = { path = "../ammolite/ammolite-math" }
 vulkano = { path = "../vulkano/vulkano" }
 openxr = { path = "../openxrs/openxr" }
 winit = "0.19.0"
