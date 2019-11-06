@@ -147,9 +147,9 @@ fn main() {
         };
         let intersection = ammolite::raytrace_distance(&world_space_models[0], &ray);
         let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance);
-        dbg!(camera.borrow().get_direction());
-        dbg!(intersection);
-        dbg!(intersection_point);
+        // dbg!(camera.borrow().get_direction());
+        // dbg!(intersection);
+        // dbg!(intersection_point);
 
         ammolite.render(&elapsed, || &world_space_models[..]);
     }

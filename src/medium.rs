@@ -96,16 +96,16 @@ impl ammolite::MediumData for MediumData {
         } = &self;
         let camera = &uniform.camera;
 
-        dbg!(&view.pose.orientation);
-        dbg!(&view.pose.position);
+        // dbg!(&view.pose.orientation);
+        // dbg!(&view.pose.position);
 
         let world_space_display_view_matrix =
             view.pose.orientation.clone().to_homogeneous()
+          * camera.borrow().get_view_matrix()
           * mat4!([1.0, 0.0, 0.0, view.pose.position[0],
                    0.0, 1.0, 0.0, view.pose.position[1],
                    0.0, 0.0, 1.0, view.pose.position[2],
-                   0.0, 0.0, 0.0, 1.0])
-          * camera.borrow().get_view_matrix();
+                   0.0, 0.0, 0.0, 1.0]);
 
         let position = -(view.pose.orientation.clone().to_homogeneous()
             * view.pose.position.clone())

@@ -1,3 +1,10 @@
+# libsurvive calibration files
+config.json
+HMD_config.json
+WM0_config.json
+WM1_config.json
+calinfo/
+
 target/
 **/*.rs.bk
 **/*LOCAL*
