@@ -11,7 +11,7 @@ Additionally, one must compile and install the following projects:
 
 In order for Monado to see HTC Vive, install special udev rules:
 ```
-sudo apt install steam-devices
+sudo apt install steam-devices libudev-dev
 ```
 Make sure to restart the computer to apply these changes.
 
