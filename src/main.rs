@@ -108,6 +108,7 @@ fn main() {
 
     // Load resources
     let model = ammolite.load_model(model_path);
+    let sphere = ammolite.load_model("../ammolite/resources/sphere_1m_radius.glb");
 
     // Event loop
     let init_instant = Instant::now();
@@ -136,7 +137,11 @@ fn main() {
             ),
         ];
 
-        let world_space_models = [
+        let mut world_space_models = [
+            WorldSpaceModel {
+                model: &sphere,
+                matrix: Mat4::zero(),
+            },
             WorldSpaceModel { model: &model, matrix: model_matrices[0].clone() },
             // WorldSpaceModel { model: &model, matrix: model_matrices[1].clone() },
         ];
@@ -145,11 +150,18 @@ fn main() {
             origin: camera.borrow().get_position(),
             direction: camera.borrow().get_direction(),
         };
-        let intersection = ammolite::raytrace_distance(&world_space_models[0], &ray);
-        let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance);
+        dbg!(&ray.origin);
+        dbg!(&ray.direction);
+        let intersection = ammolite::raytrace_distance(&world_space_models[1], &ray);
+        let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance).unwrap_or_else(|| Vec3::zero());
+        world_space_models[0].matrix = construct_model_matrix(
+            0.02 * camera.borrow().get_position().distance_to(&intersection_point),
+            &intersection_point,
+            &[0.0, 0.0, 0.0].into(),
+        );
         // dbg!(camera.borrow().get_direction());
         // dbg!(intersection);
-        // dbg!(intersection_point);
+        // dbg!(&intersection_point);
 
         ammolite.render(&elapsed, || &world_space_models[..]);
     }

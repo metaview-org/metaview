@@ -9,7 +9,7 @@ use winit::{ElementState, MouseButton, Event, DeviceEvent, WindowEvent, Keyboard
 use ammolite::{View, Ammolite, CameraTransforms, XrInstance, XrVkSession, HandleEventsCommand, MediumSpecificHandleEventsCommand};
 use ammolite::swapchain::Swapchain;
 use ammolite::camera::{self, Camera, PitchYawCamera3};
-use ammolite_math::{mat4, Mat4};
+use ammolite_math::{AffineTransformation, Rotation3, mat4, Mat4};
 use smallvec::SmallVec;
 use openxr::{self as xr, ViewConfigurationType, EventDataBuffer};
 
@@ -99,16 +99,30 @@ impl ammolite::MediumData for MediumData {
         // dbg!(&view.pose.orientation);
         // dbg!(&view.pose.position);
 
+        let camera_view_matrix = match &self.specialized {
+            SpecializedMediumData::Window { .. } => {
+                camera.borrow().get_view_matrix()
+            },
+            SpecializedMediumData::Xr { .. } => {
+                Mat4::rotation_yaw(-camera.borrow().get_rotation_axis_angles()[1])
+                * Mat4::translation(&-camera.borrow().get_position())
+            },
+        };
+
         let world_space_display_view_matrix =
-            view.pose.orientation.clone().to_homogeneous()
-          * camera.borrow().get_view_matrix()
-          * mat4!([1.0, 0.0, 0.0, view.pose.position[0],
+            mat4!([1.0, 0.0, 0.0, view.pose.position[0],
                    0.0, 1.0, 0.0, view.pose.position[1],
                    0.0, 0.0, 1.0, view.pose.position[2],
-                   0.0, 0.0, 0.0, 1.0]);
+                   0.0, 0.0, 0.0, 1.0])
+          * view.pose.orientation.clone().to_homogeneous()
+          * camera_view_matrix;
 
-        let position = -(view.pose.orientation.clone().to_homogeneous()
-            * view.pose.position.clone())
+        let camera_rotation_angles = camera.borrow().get_rotation_axis_angles();
+        let camera_rotation = Mat4::rotation_pitch(camera_rotation_angles[0])
+            * Mat4::rotation_yaw(camera_rotation_angles[1])
+            * Mat4::rotation_roll(camera_rotation_angles[2]);
+
+        let position = (camera_rotation * view.pose.position.clone())
             + camera.borrow().get_position();
 
         CameraTransforms {
