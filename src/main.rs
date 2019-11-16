@@ -63,6 +63,7 @@ fn main() {
     let primary_monitor = events_loop.get_primary_monitor();
     let events_loop = Rc::new(RefCell::new(events_loop));
     let camera = Rc::new(RefCell::new(PitchYawCamera3::new()));
+    let mut hmd_poses: Vec<(Rc<RefCell<Vec3>>, Rc<RefCell<Vec3>>)> = Vec::new();
     let uwm = UninitializedWindowMedium {
         events_loop: events_loop.clone(),
         window_builder: WindowBuilder::new()
@@ -101,7 +102,11 @@ fn main() {
                     *current_xr_vk_session = Some(xr_vk_session.clone());
                 }
             })),
-            data: MediumData::new_stereo_hmd(camera.clone()),
+            data: {
+                let data = MediumData::new_stereo_hmd(camera.clone());
+                hmd_poses.push((data.uniform.origin.clone(), data.uniform.forward.clone()));
+                data
+            },
         })
         .finish_adding_mediums_stereo_hmd()
         .build();
@@ -146,12 +151,29 @@ fn main() {
             // WorldSpaceModel { model: &model, matrix: model_matrices[1].clone() },
         ];
 
-        let ray = ammolite::Ray {
-            origin: camera.borrow().get_position(),
-            direction: camera.borrow().get_direction(),
+        let (avg_origin, avg_forward) = if hmd_poses.is_empty() {
+            (camera.borrow().get_position(), camera.borrow().get_direction())
+        } else {
+            let mut avg_origin: Vec3 = Vec3::zero();
+            let mut avg_forward: Vec3 = Vec3::zero();
+
+            for hmd_pose in hmd_poses.iter() {
+                avg_origin = avg_origin + &*hmd_pose.0.borrow();
+                avg_forward = avg_forward + &*hmd_pose.1.borrow();
+            }
+
+            (
+                avg_origin / hmd_poses.len() as f32,
+                avg_forward / hmd_poses.len() as f32,
+            )
         };
-        dbg!(&ray.origin);
-        dbg!(&ray.direction);
+
+        let ray = ammolite::Ray {
+            origin: avg_origin,
+            direction: avg_forward,
+        };
+        // dbg!(&ray.origin);
+        // dbg!(&ray.direction);
         let intersection = ammolite::raytrace_distance(&world_space_models[1], &ray);
         let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance).unwrap_or_else(|| Vec3::zero());
         world_space_models[0].matrix = construct_model_matrix(

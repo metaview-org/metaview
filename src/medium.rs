@@ -9,7 +9,7 @@ use winit::{ElementState, MouseButton, Event, DeviceEvent, WindowEvent, Keyboard
 use ammolite::{View, Ammolite, CameraTransforms, XrInstance, XrVkSession, HandleEventsCommand, MediumSpecificHandleEventsCommand};
 use ammolite::swapchain::Swapchain;
 use ammolite::camera::{self, Camera, PitchYawCamera3};
-use ammolite_math::{AffineTransformation, Rotation3, mat4, Mat4};
+use ammolite_math::{Vector, Homogeneous, Projected, Matrix, AffineTransformation, Rotation3, mat4, Mat4, Vec3};
 use smallvec::SmallVec;
 use openxr::{self as xr, ViewConfigurationType, EventDataBuffer};
 
@@ -19,7 +19,9 @@ pub struct MediumData {
 }
 
 pub struct UniformMediumData {
-    camera: Rc<RefCell<dyn Camera>>,
+    pub camera: Rc<RefCell<dyn Camera>>,
+    pub forward: Rc<RefCell<Vec3>>,
+    pub origin: Rc<RefCell<Vec3>>,
 }
 
 pub enum SpecializedMediumData {
@@ -63,6 +65,8 @@ impl UniformMediumData {
     ) -> Self {
         Self {
             camera,
+            forward: Rc::new(RefCell::new([0.0, 0.0, 1.0].into())),
+            origin: Rc::new(RefCell::new(Vec3::zero())),
         }
     }
 }
@@ -94,36 +98,25 @@ impl ammolite::MediumData for MediumData {
             ref uniform,
             ref specialized,
         } = &self;
-        let camera = &uniform.camera;
+        let camera = &uniform.camera.borrow();
 
-        // dbg!(&view.pose.orientation);
-        // dbg!(&view.pose.position);
-
-        let camera_view_matrix = match &self.specialized {
-            SpecializedMediumData::Window { .. } => {
-                camera.borrow().get_view_matrix()
-            },
-            SpecializedMediumData::Xr { .. } => {
-                Mat4::rotation_yaw(-camera.borrow().get_rotation_axis_angles()[1])
-                * Mat4::translation(&-camera.borrow().get_position())
-            },
-        };
+        let camera_view_matrix = camera.get_view_matrix();
+        // The inverses of the view rotation matrices
+        let camera_rotation_matrix = camera.get_view_rotation_matrix().transpose();
+        let view_rotation_matrix = view.pose.orientation.clone().to_homogeneous().transpose();
 
         let world_space_display_view_matrix =
-            mat4!([1.0, 0.0, 0.0, view.pose.position[0],
-                   0.0, 1.0, 0.0, view.pose.position[1],
-                   0.0, 0.0, 1.0, view.pose.position[2],
-                   0.0, 0.0, 0.0, 1.0])
-          * view.pose.orientation.clone().to_homogeneous()
+            view.pose.orientation.clone().to_homogeneous()
+          * Mat4::translation((&view.pose.position).into())
           * camera_view_matrix;
 
-        let camera_rotation_angles = camera.borrow().get_rotation_axis_angles();
-        let camera_rotation = Mat4::rotation_pitch(camera_rotation_angles[0])
-            * Mat4::rotation_yaw(camera_rotation_angles[1])
-            * Mat4::rotation_roll(camera_rotation_angles[2]);
-
-        let position = (camera_rotation * view.pose.position.clone())
-            + camera.borrow().get_position();
+        let position = camera.get_position()
+            + (&camera_rotation_matrix * (-&view.pose.position).into_homogeneous_position())
+                .into_projected();
+        *uniform.forward.borrow_mut() = (camera_rotation_matrix
+            * view_rotation_matrix
+            * Vec3([0.0, 0.0, -1.0]).into_homogeneous_direction()).into_projected();
+        *uniform.origin.borrow_mut() = position.clone();
 
         CameraTransforms {
             position,
