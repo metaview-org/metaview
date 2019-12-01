@@ -1,3 +1,9 @@
+//! TODO:
+//! * Figure out how to represent cameras/views in the scene graph and how to
+//!   render geometry relative to the cameras/views. Ideas:
+//!   - Make HMDs proper entities of the scene graph
+//!   - Make HMDs' orientations available via a resource
+
 #![feature(type_alias_enum_variants)]
 
 use std::rc::Rc;
@@ -13,9 +19,13 @@ use ammolite::{Ammolite, WorldSpaceModel, UninitializedWindowMedium, Uninitializ
 use ammolite_math::*;
 use ammolite::camera::{Camera, PitchYawCamera3};
 use lazy_static::lazy_static;
+use specs::prelude::*;
+use specs_hierarchy::{Hierarchy, HierarchySystem};
 use crate::medium::{MediumData, SpecializedMediumData, UniformMediumData};
+use crate::ecs::*;
 
 pub mod medium;
+pub mod ecs;
 
 lazy_static! {
     static ref PACKAGE_VERSION: (u16, u16, u16) = (
@@ -112,8 +122,68 @@ fn main() {
         .build();
 
     // Load resources
-    let model = ammolite.load_model(model_path);
-    let sphere = ammolite.load_model("../ammolite/resources/sphere_1m_radius.glb");
+    let model = Arc::new(ammolite.load_model(model_path));
+    let sphere = Arc::new(ammolite.load_model("../ammolite/resources/sphere_1m_radius.glb"));
+
+    // World
+    let mut world = World::new();
+    // world.register::<ComponentParent>();
+    // world.register::<ComponentTransformRelative>();
+    // world.register::<ComponentTransformAbsolute>();
+    // world.register::<ComponentModel>();
+    world.insert(ResourceTimeElapsed::default());
+    world.insert(ResourceTimeElapsedDelta::default());
+    world.insert(ResourceRenderData::default());
+
+    let mut dispatcher = DispatcherBuilder::new()
+        .with(HierarchySystem::<ComponentParent>::new(&mut world), "system_hierarchy", &[])
+        .with_barrier()
+        .with(SystemTransformInheritance, "system_transform_inheritance", &[])
+        .with_thread_local(SystemRender)
+        .build();
+
+    dispatcher.setup(&mut world);
+
+    let scene_root = world.create_entity()
+        .build();
+
+    world.insert(ResourceSceneRoot(scene_root));
+
+    let scene_child = world.create_entity()
+        .with(ComponentParent {
+            entity: scene_root,
+        })
+        .with(ComponentTransformRelative {
+            matrix: construct_model_matrix(
+                1.0,
+                &[0.0, 0.0, 2.0].into(),
+                &[0.0, 0.0, 0.0].into(),
+            ),
+        })
+        .with(ComponentModel {
+            model: model.clone(),
+        })
+        .build();
+
+    let mut previous_child = scene_child;
+
+    for _ in 0..4 {
+        previous_child = world.create_entity()
+            .with(ComponentParent {
+                entity: previous_child,
+            })
+            .with(ComponentTransformRelative {
+                matrix: construct_model_matrix(
+                    0.75,
+                    &[3.0, 0.0, 0.0].into(),
+                    &[0.0, 0.3, 0.0].into(),
+                ),
+            })
+            .with(ComponentModel {
+                model: model.clone(),
+            })
+            .build();
+    }
 
     // Event loop
     let init_instant = Instant::now();
@@ -123,6 +193,8 @@ fn main() {
         let now = Instant::now();
         let elapsed = now.duration_since(init_instant);
         let delta_time = now.duration_since(previous_frame_instant);
+        *world.write_resource::<ResourceTimeElapsed>() = ResourceTimeElapsed(elapsed);
+        *world.write_resource::<ResourceTimeElapsedDelta>() = ResourceTimeElapsedDelta(delta_time);
         previous_frame_instant = now;
         let secs_elapsed = ((elapsed.as_secs() as f64) + (elapsed.as_nanos() as f64) / (1_000_000_000f64)) as f32;
         if ammolite.handle_events(&delta_time) {
@@ -151,6 +223,8 @@ fn main() {
             // WorldSpaceModel { model: &model, matrix: model_matrices[1].clone() },
         ];
 
+        dbg!(&hmd_poses);
+
         let (avg_origin, avg_forward) = if hmd_poses.is_empty() {
             (camera.borrow().get_position(), camera.borrow().get_direction())
         } else {
@@ -172,8 +246,6 @@ fn main() {
             origin: avg_origin,
             direction: avg_forward,
         };
-        // dbg!(&ray.origin);
-        // dbg!(&ray.direction);
         let intersection = ammolite::raytrace_distance(&world_space_models[1], &ray);
         let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance).unwrap_or_else(|| Vec3::zero());
         world_space_models[0].matrix = construct_model_matrix(
@@ -181,10 +253,23 @@ fn main() {
             &intersection_point,
             &[0.0, 0.0, 0.0].into(),
         );
-        // dbg!(camera.borrow().get_direction());
-        // dbg!(intersection);
-        // dbg!(&intersection_point);
 
-        ammolite.render(&elapsed, || &world_space_models[..]);
+        dispatcher.dispatch(&mut world);
+
+        {
+            let render_data = world.fetch::<ResourceRenderData>();
+            let mut world_space_models: Vec<WorldSpaceModel> = Vec::with_capacity(render_data.world_space_models.len());
+
+            for (matrix, model) in &render_data.world_space_models {
+                world_space_models.push(WorldSpaceModel {
+                    matrix: matrix.clone(),
+                    model: &model,
+                })
+            }
+
+            ammolite.render(&elapsed, || &world_space_models[..]);
+        };
+
+        world.maintain();
     }
 }
