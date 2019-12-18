@@ -16,3 +16,7 @@ lazy_static = "1.4.0"
 specs = "0.15.1"
 specs-hierarchy = "0.5.1"
 # conrod = { version = "0.51.1", features = [ "piston" ] }
+wasmtime-rust = "0.8.0"
+serde = { version = "1.0", features = ["derive"] }
+json5 = "0.2.5"
+mlib = { path = "../mlib" }

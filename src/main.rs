@@ -23,9 +23,11 @@ use specs::prelude::*;
 use specs_hierarchy::{Hierarchy, HierarchySystem};
 use crate::medium::{MediumData, SpecializedMediumData, UniformMediumData};
 use crate::ecs::*;
+use crate::vm::{Mapp, MappExports, MappContainer};
 
 pub mod medium;
 pub mod ecs;
+pub mod vm;
 
 lazy_static! {
     static ref PACKAGE_VERSION: (u16, u16, u16) = (
@@ -48,20 +50,6 @@ fn construct_model_matrix(scale: f32, translation: &Vec3, rotation: &Vec3) -> Ma
 }
 
 fn main() {
-    // let polygon = [
-    //     Vec3([ 1.0,  1.0, 1.0]),
-    //     Vec3([-1.0,  1.0, 2.0]),
-    //     Vec3([-1.0, -1.0, 3.0]),
-    //     Vec3([ 1.0, -1.0, 2.0]),
-    // ];
-    // let ray = ammolite::Ray {
-    //     origin: Vec3([ 1.0, -1.0,  0.0]),
-    //     direction: Vec3([0.0, 0.0, 1.0]),
-    // };
-    // let intersection = ammolite::intersect_convex_polygon(&polygon[..], &ray.into());
-    // dbg!(intersection);
-    // return;
-
     // Check arguments
     let model_path = std::env::args().nth(1).unwrap_or_else(|| {
         eprintln!("No model path provided.");
@@ -122,8 +110,8 @@ fn main() {
         .build();
 
     // Load resources
-    let model = Arc::new(ammolite.load_model(model_path));
-    let sphere = Arc::new(ammolite.load_model("../ammolite/resources/sphere_1m_radius.glb"));
+    let model = Arc::new(ammolite.load_model_path(model_path));
+    let sphere = Arc::new(ammolite.load_model_path("../ammolite/resources/sphere_1m_radius.glb"));
 
     // World
     let mut world = World::new();
@@ -149,41 +137,54 @@ fn main() {
 
     world.insert(ResourceSceneRoot(scene_root));
 
-    let scene_child = world.create_entity()
-        .with(ComponentParent {
-            entity: scene_root,
-        })
-        .with(ComponentTransformRelative {
-            matrix: construct_model_matrix(
-                1.0,
-                &[0.0, 0.0, 2.0].into(),
-                &[0.0, 0.0, 0.0].into(),
-            ),
-        })
-        .with(ComponentModel {
-            model: model.clone(),
-        })
-        .build();
+    // let scene_child = world.create_entity()
+    //     .with(ComponentParent {
+    //         entity: scene_root,
+    //     })
+    //     .with(ComponentTransformRelative {
+    //         matrix: Mat4::identity(),
+    //         // matrix: construct_model_matrix(
+    //         //     1.0,
+    //         //     &[0.0, 0.0, 2.0].into(),
+    //         //     &[0.0, 0.0, 0.0].into(),
+    //         // ),
+    //     })
+    //     .with(ComponentModel {
+    //         model: model.clone(),
+    //     })
+    //     .build();
 
-    let mut previous_child = scene_child;
+    // let mut previous_child = scene_child;
 
-    for _ in 0..4 {
-        previous_child = world.create_entity()
-            .with(ComponentParent {
-                entity: previous_child,
-            })
-            .with(ComponentTransformRelative {
-                matrix: construct_model_matrix(
-                    0.75,
-                    &[3.0, 0.0, 0.0].into(),
-                    &[0.0, 0.3, 0.0].into(),
-                ),
-            })
-            .with(ComponentModel {
-                model: model.clone(),
-            })
-            .build();
-    }
+    // for _ in 0..4 {
+    //     previous_child = world.create_entity()
+    //         .with(ComponentParent {
+    //             entity: previous_child,
+    //         })
+    //         .with(ComponentTransformRelative {
+    //             matrix: construct_model_matrix(
+    //                 0.75,
+    //                 &[3.0, 0.0, 0.0].into(),
+    //                 &[0.0, 0.3, 0.0].into(),
+    //             ),
+    //         })
+    //         .with(ComponentModel {
+    //             model: model.clone(),
+    //         })
+    //         .build();
+    // }
+
+    // Load Mapp
+    let mapp_exports = MappExports::load_file("../example-mapp/pkg/example_mapp.wasm")
+        .expect("Could not load the Example MApp.");
+    let mapp = Mapp::initialize(mapp_exports);
+    let mut mappc = MappContainer::new(mapp, &mut world);
+    // println!("{:?}", mapp.test("1".to_string()));
+    // println!("{:?}", mapp.test("2".to_string()));
+    // println!("{:?}", mapp.test("3".to_string()));
+
+    mappc.process_io();
+    mappc.process_commands(&mut ammolite, &mut world, true);
 
     // Event loop
     let init_instant = Instant::now();
@@ -201,6 +202,8 @@ fn main() {
             break;
         }
 
+        // let root_model_matrix = mapp.get_model_matrices(secs_elapsed)[0];
+
         let model_matrices = [
             construct_model_matrix(
                 1.0,
@@ -214,6 +217,10 @@ fn main() {
             ),
         ];
 
+        mappc.mapp.update(elapsed);
+        mappc.process_io();
+        mappc.process_commands(&mut ammolite, &mut world, true);
+
         let mut world_space_models = [
             WorldSpaceModel {
                 model: &sphere,
@@ -223,7 +230,7 @@ fn main() {
             // WorldSpaceModel { model: &model, matrix: model_matrices[1].clone() },
         ];
 
-        dbg!(&hmd_poses);
+        // dbg!(&hmd_poses);
 
         let (avg_origin, avg_forward) = if hmd_poses.is_empty() {
             (camera.borrow().get_position(), camera.borrow().get_direction())
