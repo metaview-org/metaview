@@ -184,13 +184,15 @@ fn main() {
     // println!("{:?}", mapp.test("3".to_string()));
 
     mappc.process_io();
-    mappc.process_commands(&mut ammolite, &mut world, true);
+    mappc.process_commands(&mut ammolite, &mut world, &camera, true);
 
     // Event loop
     let init_instant = Instant::now();
     let mut previous_frame_instant = init_instant.clone();
 
     loop {
+        // dbg!(ammolite.views().collect::<Vec<_>>());
+
         let now = Instant::now();
         let elapsed = now.duration_since(init_instant);
         let delta_time = now.duration_since(previous_frame_instant);
@@ -219,7 +221,7 @@ fn main() {
 
         mappc.mapp.update(elapsed);
         mappc.process_io();
-        mappc.process_commands(&mut ammolite, &mut world, true);
+        mappc.process_commands(&mut ammolite, &mut world, &camera, true);
 
         let mut world_space_models = [
             WorldSpaceModel {
@@ -253,6 +255,7 @@ fn main() {
             origin: avg_origin,
             direction: avg_forward,
         };
+        // dbg!(&ray);
         let intersection = ammolite::raytrace_distance(&world_space_models[1], &ray);
         let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance).unwrap_or_else(|| Vec3::zero());
         world_space_models[0].matrix = construct_model_matrix(
@@ -267,7 +270,7 @@ fn main() {
             let render_data = world.fetch::<ResourceRenderData>();
             let mut world_space_models: Vec<WorldSpaceModel> = Vec::with_capacity(render_data.world_space_models.len());
 
-            for (matrix, model) in &render_data.world_space_models {
+            for (_id, matrix, model) in &render_data.world_space_models {
                 world_space_models.push(WorldSpaceModel {
                     matrix: matrix.clone(),
                     model: &model,

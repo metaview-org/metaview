@@ -6,7 +6,7 @@ use ammolite_math::Mat4;
 use ammolite::model::Model;
 use ammolite::WorldSpaceModel;
 use ammolite::camera::Camera;
-use specs::join;
+use specs::{join, world::{Index, EntitiesRes}};
 use specs::prelude::*;
 use specs_hierarchy::{Hierarchy, HierarchySystem};
 
@@ -60,7 +60,7 @@ pub struct ResourceTimeElapsedDelta(pub Duration);
 
 #[derive(Default)]
 pub struct ResourceRenderData {
-    pub world_space_models: Vec<(Mat4, Arc<Model>)>,
+    pub world_space_models: Vec<(Index, Mat4, Arc<Model>)>,
 }
 
 pub struct SystemTransformInheritance;
@@ -99,16 +99,17 @@ pub struct SystemRender;
 
 impl<'a> System<'a> for SystemRender {
     type SystemData = (
-        Write<'a, ResourceRenderData>,
+        WriteExpect<'a, ResourceRenderData>,
+        Read<'a, EntitiesRes>,
         ReadStorage<'a, ComponentTransformAbsolute>,
         ReadStorage<'a, ComponentModel>,
     );
 
-    fn run(&mut self, (mut render_data, transform, model): Self::SystemData) {
+    fn run(&mut self, (mut render_data, entities, transform, model): Self::SystemData) {
         render_data.world_space_models.clear();
 
-        for (transform, model) in (&transform, &model).join() {
-            render_data.world_space_models.push((transform.matrix.clone(), model.model.clone()));
+        for (entity, transform, model) in (&entities, &transform, &model).join() {
+            render_data.world_space_models.push((entity.id(), transform.matrix.clone(), model.model.clone()));
         }
     }
 }
