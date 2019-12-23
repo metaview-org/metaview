@@ -4,24 +4,18 @@
 //!   - Make HMDs proper entities of the scene graph
 //!   - Make HMDs' orientations available via a resource
 
-#![feature(type_alias_enum_variants)]
-
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::time::{Duration, Instant};
-use std::num::NonZeroU32;
-use std::sync::Arc;
-use vulkano as vk;
-use openxr as xr;
-use winit::{ElementState, MouseButton, Event, DeviceEvent, WindowEvent, KeyboardInput, VirtualKeyCode, EventsLoop, WindowBuilder, Window};
+use winit::{EventsLoop, WindowBuilder};
+use std::time::Instant;
 use winit::dpi::PhysicalSize;
 use ammolite::{Ammolite, WorldSpaceModel, UninitializedWindowMedium, UninitializedStereoHmdMedium};
 use ammolite_math::*;
-use ammolite::camera::{Camera, PitchYawCamera3};
+use ammolite::camera::PitchYawCamera3;
 use lazy_static::lazy_static;
 use specs::prelude::*;
-use specs_hierarchy::{Hierarchy, HierarchySystem};
-use crate::medium::{MediumData, SpecializedMediumData, UniformMediumData};
+use specs_hierarchy::HierarchySystem;
+use crate::medium::{MediumData, SpecializedMediumData};
 use crate::ecs::*;
 use crate::vm::{Mapp, MappExports, MappContainer};
 
@@ -41,17 +35,10 @@ lazy_static! {
     static ref PACKAGE_NAME: &'static str = env!("CARGO_PKG_NAME");
 }
 
-fn construct_model_matrix(scale: f32, translation: &Vec3, rotation: &Vec3) -> Mat4 {
-    Mat4::translation(translation)
-        * Mat4::rotation_roll(rotation[2])
-        * Mat4::rotation_yaw(rotation[1])
-        * Mat4::rotation_pitch(rotation[0])
-        * Mat4::scale(scale)
-}
-
 fn main() {
     // Check arguments
-    let model_path = std::env::args().nth(1);
+    let mapp_path = std::env::args().nth(1)
+        .expect("Path to a Metaview application not provided.");
 
     // Build Ammolite
     let events_loop = EventsLoop::new();
@@ -106,16 +93,8 @@ fn main() {
         .finish_adding_mediums_stereo_hmd()
         .build();
 
-    // Load resources
-    let model = model_path.map(|model_path| Arc::new(ammolite.load_model_path(model_path)));
-    // let sphere = Arc::new(ammolite.load_model_path("../ammolite/resources/sphere_1m_radius.glb"));
-
     // World
     let mut world = World::new();
-    // world.register::<ComponentParent>();
-    // world.register::<ComponentTransformRelative>();
-    // world.register::<ComponentTransformAbsolute>();
-    // world.register::<ComponentModel>();
     world.insert(ResourceTimeElapsed::default());
     world.insert(ResourceTimeElapsedDelta::default());
     world.insert(ResourceRenderData::default());
@@ -134,47 +113,8 @@ fn main() {
 
     world.insert(ResourceSceneRoot(scene_root));
 
-    if let Some(model) = model {
-        world.create_entity()
-            .with(ComponentParent {
-                entity: scene_root,
-            })
-            .with(ComponentTransformRelative {
-                // matrix: Mat4::identity(),
-                matrix: construct_model_matrix(
-                    1.0,
-                    &[0.0, 0.0, 2.0].into(),
-                    &[0.0, 0.0, 0.0].into(),
-                ),
-            })
-            .with(ComponentModel {
-                model: model.clone(),
-            })
-            .build();
-    }
-
-    // let mut previous_child = scene_child;
-
-    // for _ in 0..4 {
-    //     previous_child = world.create_entity()
-    //         .with(ComponentParent {
-    //             entity: previous_child,
-    //         })
-    //         .with(ComponentTransformRelative {
-    //             matrix: construct_model_matrix(
-    //                 0.75,
-    //                 &[3.0, 0.0, 0.0].into(),
-    //                 &[0.0, 0.3, 0.0].into(),
-    //             ),
-    //         })
-    //         .with(ComponentModel {
-    //             model: model.clone(),
-    //         })
-    //         .build();
-    // }
-
     // Load Mapp
-    let mapp_exports = MappExports::load_file("../example-mapp/pkg/example_mapp.wasm")
+    let mapp_exports = MappExports::load_file(mapp_path)
         .expect("Could not load the Example MApp.");
     let mapp = Mapp::initialize(mapp_exports);
     let mut mappc = MappContainer::new(mapp, &mut world);
@@ -193,7 +133,6 @@ fn main() {
 
     loop {
         // println!("Frame.");
-        // dbg!(ammolite.views().collect::<Vec<_>>());
 
         let now = Instant::now();
         let elapsed = now.duration_since(init_instant);
@@ -201,70 +140,14 @@ fn main() {
         *world.write_resource::<ResourceTimeElapsed>() = ResourceTimeElapsed(elapsed);
         *world.write_resource::<ResourceTimeElapsedDelta>() = ResourceTimeElapsedDelta(delta_time);
         previous_frame_instant = now;
-        let secs_elapsed = ((elapsed.as_secs() as f64) + (elapsed.as_nanos() as f64) / (1_000_000_000f64)) as f32;
+
         if ammolite.handle_events(&delta_time) {
             break;
         }
 
-        // let root_model_matrix = mapp.get_model_matrices(secs_elapsed)[0];
-
-        // let model_matrices = [
-        //     construct_model_matrix(
-        //         1.0,
-        //         &[0.0, 0.0, 2.0].into(),
-        //         &[secs_elapsed.sin() * 0.0 * 1.0, std::f32::consts::PI + secs_elapsed.cos() * 0.0 * 3.0 / 2.0, 0.0].into(),
-        //     ),
-        //     construct_model_matrix(
-        //         1.0,
-        //         &[0.0, 1.0, 2.0].into(),
-        //         &[secs_elapsed.sin() * 0.0 * 1.0, std::f32::consts::PI + secs_elapsed.cos() * 0.0 * 3.0 / 2.0, 0.0].into(),
-        //     ),
-        // ];
-
         mappc.mapp.update(elapsed);
         mappc.process_io();
         mappc.process_commands(&mut ammolite, &mut world, &camera, true);
-
-        // let mut world_space_models = [
-        //     WorldSpaceModel {
-        //         model: &sphere,
-        //         matrix: Mat4::zero(),
-        //     },
-        //     WorldSpaceModel { model: &model, matrix: model_matrices[0].clone() },
-        //     // WorldSpaceModel { model: &model, matrix: model_matrices[1].clone() },
-        // ];
-
-        // dbg!(&hmd_poses);
-
-        // let (avg_origin, avg_forward) = if hmd_poses.is_empty() {
-        //     (camera.borrow().get_position(), camera.borrow().get_direction())
-        // } else {
-        //     let mut avg_origin: Vec3 = Vec3::zero();
-        //     let mut avg_forward: Vec3 = Vec3::zero();
-
-        //     for hmd_pose in hmd_poses.iter() {
-        //         avg_origin = avg_origin + &*hmd_pose.0.borrow();
-        //         avg_forward = avg_forward + &*hmd_pose.1.borrow();
-        //     }
-
-        //     (
-        //         avg_origin / hmd_poses.len() as f32,
-        //         avg_forward / hmd_poses.len() as f32,
-        //     )
-        // };
-
-        // let ray = ammolite::Ray {
-        //     origin: avg_origin,
-        //     direction: avg_forward,
-        // };
-        // dbg!(&ray);
-        // let intersection = ammolite::raytrace_distance(&world_space_models[1], &ray);
-        // let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance).unwrap_or_else(|| Vec3::zero());
-        // world_space_models[0].matrix = construct_model_matrix(
-        //     0.02 * camera.borrow().get_position().distance_to(&intersection_point),
-        //     &intersection_point,
-        //     &[0.0, 0.0, 0.0].into(),
-        // );
 
         dispatcher.dispatch(&mut world);
 

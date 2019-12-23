@@ -55,8 +55,9 @@ impl MappContainer {
             let Command { id, kind } = command;
             let response_kind = match kind {
                 CommandKind::ModelCreate { data } => {
-                    let model = Arc::new(ammolite.load_model_slice(&data[..]));
                     let model_index = self.models.len();
+                    println!("Loading model #{}.", model_index);
+                    let model = Arc::new(ammolite.load_model_slice(&data[..]));
                     self.models.push(model);
 
                     Some(CommandResponseKind::ModelCreate {
