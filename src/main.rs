@@ -51,10 +51,7 @@ fn construct_model_matrix(scale: f32, translation: &Vec3, rotation: &Vec3) -> Ma
 
 fn main() {
     // Check arguments
-    let model_path = std::env::args().nth(1).unwrap_or_else(|| {
-        eprintln!("No model path provided.");
-        std::process::exit(1);
-    });
+    let model_path = std::env::args().nth(1);
 
     // Build Ammolite
     let events_loop = EventsLoop::new();
@@ -110,8 +107,8 @@ fn main() {
         .build();
 
     // Load resources
-    let model = Arc::new(ammolite.load_model_path(model_path));
-    let sphere = Arc::new(ammolite.load_model_path("../ammolite/resources/sphere_1m_radius.glb"));
+    let model = model_path.map(|model_path| Arc::new(ammolite.load_model_path(model_path)));
+    // let sphere = Arc::new(ammolite.load_model_path("../ammolite/resources/sphere_1m_radius.glb"));
 
     // World
     let mut world = World::new();
@@ -137,22 +134,24 @@ fn main() {
 
     world.insert(ResourceSceneRoot(scene_root));
 
-    // let scene_child = world.create_entity()
-    //     .with(ComponentParent {
-    //         entity: scene_root,
-    //     })
-    //     .with(ComponentTransformRelative {
-    //         matrix: Mat4::identity(),
-    //         // matrix: construct_model_matrix(
-    //         //     1.0,
-    //         //     &[0.0, 0.0, 2.0].into(),
-    //         //     &[0.0, 0.0, 0.0].into(),
-    //         // ),
-    //     })
-    //     .with(ComponentModel {
-    //         model: model.clone(),
-    //     })
-    //     .build();
+    if let Some(model) = model {
+        world.create_entity()
+            .with(ComponentParent {
+                entity: scene_root,
+            })
+            .with(ComponentTransformRelative {
+                // matrix: Mat4::identity(),
+                matrix: construct_model_matrix(
+                    1.0,
+                    &[0.0, 0.0, 2.0].into(),
+                    &[0.0, 0.0, 0.0].into(),
+                ),
+            })
+            .with(ComponentModel {
+                model: model.clone(),
+            })
+            .build();
+    }
 
     // let mut previous_child = scene_child;
 
@@ -190,7 +189,10 @@ fn main() {
     let init_instant = Instant::now();
     let mut previous_frame_instant = init_instant.clone();
 
+    println!("Rendering loop entered.");
+
     loop {
+        // println!("Frame.");
         // dbg!(ammolite.views().collect::<Vec<_>>());
 
         let now = Instant::now();
@@ -206,63 +208,63 @@ fn main() {
 
         // let root_model_matrix = mapp.get_model_matrices(secs_elapsed)[0];
 
-        let model_matrices = [
-            construct_model_matrix(
-                1.0,
-                &[0.0, 0.0, 2.0].into(),
-                &[secs_elapsed.sin() * 0.0 * 1.0, std::f32::consts::PI + secs_elapsed.cos() * 0.0 * 3.0 / 2.0, 0.0].into(),
-            ),
-            construct_model_matrix(
-                1.0,
-                &[0.0, 1.0, 2.0].into(),
-                &[secs_elapsed.sin() * 0.0 * 1.0, std::f32::consts::PI + secs_elapsed.cos() * 0.0 * 3.0 / 2.0, 0.0].into(),
-            ),
-        ];
+        // let model_matrices = [
+        //     construct_model_matrix(
+        //         1.0,
+        //         &[0.0, 0.0, 2.0].into(),
+        //         &[secs_elapsed.sin() * 0.0 * 1.0, std::f32::consts::PI + secs_elapsed.cos() * 0.0 * 3.0 / 2.0, 0.0].into(),
+        //     ),
+        //     construct_model_matrix(
+        //         1.0,
+        //         &[0.0, 1.0, 2.0].into(),
+        //         &[secs_elapsed.sin() * 0.0 * 1.0, std::f32::consts::PI + secs_elapsed.cos() * 0.0 * 3.0 / 2.0, 0.0].into(),
+        //     ),
+        // ];
 
         mappc.mapp.update(elapsed);
         mappc.process_io();
         mappc.process_commands(&mut ammolite, &mut world, &camera, true);
 
-        let mut world_space_models = [
-            WorldSpaceModel {
-                model: &sphere,
-                matrix: Mat4::zero(),
-            },
-            WorldSpaceModel { model: &model, matrix: model_matrices[0].clone() },
-            // WorldSpaceModel { model: &model, matrix: model_matrices[1].clone() },
-        ];
+        // let mut world_space_models = [
+        //     WorldSpaceModel {
+        //         model: &sphere,
+        //         matrix: Mat4::zero(),
+        //     },
+        //     WorldSpaceModel { model: &model, matrix: model_matrices[0].clone() },
+        //     // WorldSpaceModel { model: &model, matrix: model_matrices[1].clone() },
+        // ];
 
         // dbg!(&hmd_poses);
 
-        let (avg_origin, avg_forward) = if hmd_poses.is_empty() {
-            (camera.borrow().get_position(), camera.borrow().get_direction())
-        } else {
-            let mut avg_origin: Vec3 = Vec3::zero();
-            let mut avg_forward: Vec3 = Vec3::zero();
+        // let (avg_origin, avg_forward) = if hmd_poses.is_empty() {
+        //     (camera.borrow().get_position(), camera.borrow().get_direction())
+        // } else {
+        //     let mut avg_origin: Vec3 = Vec3::zero();
+        //     let mut avg_forward: Vec3 = Vec3::zero();
 
-            for hmd_pose in hmd_poses.iter() {
-                avg_origin = avg_origin + &*hmd_pose.0.borrow();
-                avg_forward = avg_forward + &*hmd_pose.1.borrow();
-            }
+        //     for hmd_pose in hmd_poses.iter() {
+        //         avg_origin = avg_origin + &*hmd_pose.0.borrow();
+        //         avg_forward = avg_forward + &*hmd_pose.1.borrow();
+        //     }
 
-            (
-                avg_origin / hmd_poses.len() as f32,
-                avg_forward / hmd_poses.len() as f32,
-            )
-        };
+        //     (
+        //         avg_origin / hmd_poses.len() as f32,
+        //         avg_forward / hmd_poses.len() as f32,
+        //     )
+        // };
 
-        let ray = ammolite::Ray {
-            origin: avg_origin,
-            direction: avg_forward,
-        };
+        // let ray = ammolite::Ray {
+        //     origin: avg_origin,
+        //     direction: avg_forward,
+        // };
         // dbg!(&ray);
-        let intersection = ammolite::raytrace_distance(&world_space_models[1], &ray);
-        let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance).unwrap_or_else(|| Vec3::zero());
-        world_space_models[0].matrix = construct_model_matrix(
-            0.02 * camera.borrow().get_position().distance_to(&intersection_point),
-            &intersection_point,
-            &[0.0, 0.0, 0.0].into(),
-        );
+        // let intersection = ammolite::raytrace_distance(&world_space_models[1], &ray);
+        // let intersection_point = intersection.as_ref().map(|intersection| ray.origin + ray.direction * intersection.distance).unwrap_or_else(|| Vec3::zero());
+        // world_space_models[0].matrix = construct_model_matrix(
+        //     0.02 * camera.borrow().get_position().distance_to(&intersection_point),
+        //     &intersection_point,
+        //     &[0.0, 0.0, 0.0].into(),
+        // );
 
         dispatcher.dispatch(&mut world);
 

@@ -99,8 +99,8 @@ impl MappContainer {
                     })
                 },
                 CommandKind::EntityModelSet { entity, model } => {
-                    dbg!(&entity);
-                    dbg!(&model);
+                    // dbg!(&entity);
+                    // dbg!(&model);
                     let entities = world.fetch::<EntitiesRes>();
                     // FIXME
                     let entity = entities.entity(entity.0 as u32);
@@ -178,8 +178,8 @@ impl MappContainer {
                     })
                 },
                 CommandKind::RayTrace { origin, direction } => {
-                    dbg!(&origin);
-                    dbg!(&direction);
+                    // dbg!(&origin);
+                    // dbg!(&direction);
                     // unreachable!();
                     let render_data = world.fetch::<ResourceRenderData>();
                     let mut world_space_models: Vec<(Entity, WorldSpaceModel)> = Vec::with_capacity(render_data.world_space_models.len());
