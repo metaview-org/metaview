@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::io::Write;
 use std::sync::Arc;
+use std::time::{Instant, Duration};
 use ammolite_math::*;
 use ammolite::{Ammolite, Ray, WorldSpaceModel};
 use ammolite::camera::{Camera, PitchYawCamera3};
@@ -55,10 +56,13 @@ impl MappContainer {
             let Command { id, kind } = command;
             let response_kind = match kind {
                 CommandKind::ModelCreate { data } => {
+                    let bytes = data.into_bytes();
                     let model_index = self.models.len();
                     println!("Loading model #{}.", model_index);
-                    let model = Arc::new(ammolite.load_model_slice(&data[..]));
+                    let start = Instant::now();
+                    let model = Arc::new(ammolite.load_model_slice(&bytes[..]));
                     self.models.push(model);
+                    println!("Model #{} loaded, took {:.2} seconds.", model_index, start.elapsed().as_secs_f32());
 
                     Some(CommandResponseKind::ModelCreate {
                         model: Model(model_index),
@@ -235,7 +239,7 @@ impl MappContainer {
     pub fn process_io(&mut self) {
         let IO { out, err } = self.mapp.flush_io();
 
-        {
+        if !out.is_empty() {
             let stdout = std::io::stdout();
             let mut handle = stdout.lock();
 
@@ -243,7 +247,7 @@ impl MappContainer {
                 .expect("Could not redirect the module's stdout to the host stdout.");
         }
 
-        {
+        if !err.is_empty() {
             let stderr = std::io::stderr();
             let mut handle = stderr.lock();
 

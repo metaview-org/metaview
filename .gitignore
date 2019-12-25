@@ -5,6 +5,11 @@ WM0_config.json
 WM1_config.json
 calinfo/
 
+# benchmarking files
+flamegraph.svg
+perf.data
+perf.data.old
+
 target/
 **/*.rs.bk
 **/*LOCAL*
