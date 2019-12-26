@@ -1,4 +1,10 @@
 //! TODO:
+//! * Convert command message passing using the exports to exports/imports
+//!   (see wasmtime-api and wasmtime-interface-types)
+//! * Add entity deletion
+//! * Figure out a way to represent point lights:
+//!   - abuse glTF scenes, which you can use to store light sources with;
+//!   - or use an explicit representation for light sources
 //! * Figure out how to represent cameras/views in the scene graph and how to
 //!   render geometry relative to the cameras/views. Ideas:
 //!   - Make HMDs proper entities of the scene graph
