@@ -30,7 +30,7 @@ impl MappContainer {
                 entity: resource_scene_root,
             })
             .with(ComponentTransformRelative {
-                matrix: Mat4::identity(),
+                matrix: Mat4::IDENTITY,
             })
             .build();
         Self {

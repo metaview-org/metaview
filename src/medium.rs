@@ -66,7 +66,7 @@ impl UniformMediumData {
         Self {
             camera,
             forward: Rc::new(RefCell::new([0.0, 0.0, 1.0].into())),
-            origin: Rc::new(RefCell::new(Vec3::zero())),
+            origin: Rc::new(RefCell::new(Vec3::ZERO)),
         }
     }
 }
