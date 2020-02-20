@@ -9,7 +9,7 @@ ammolite = { path = "../ammolite" }
 ammolite-math = { path = "../ammolite/ammolite-math" }
 vulkano = { path = "../vulkano/vulkano" }
 openxr = { path = "../openxrs/openxr" }
-winit = "0.19.0"
+winit = "0.21.0"
 paste = "0.1"
 smallvec = "0.6.10"
 lazy_static = "1.4.0"

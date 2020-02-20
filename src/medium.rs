@@ -4,14 +4,23 @@ use std::sync::Arc;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::sync::mpsc::Sender;
 use vulkano::swapchain::{PresentMode, SurfaceTransform, AcquireError, SwapchainCreationError, Surface};
-use winit::{ElementState, MouseButton, Event, DeviceEvent, WindowEvent, KeyboardInput, VirtualKeyCode, EventsLoop, WindowBuilder, Window};
+use winit::platform::desktop::EventLoopExtDesktop;
+use winit::event_loop::{EventLoop, ControlFlow};
+use winit::window::{Window, WindowBuilder};
+use winit::event::{ElementState, MouseButton, Event, DeviceEvent, WindowEvent, KeyboardInput, VirtualKeyCode};
 use ammolite::{View, Ammolite, CameraTransforms, XrInstance, XrVkSession, HandleEventsCommand, MediumSpecificHandleEventsCommand};
 use ammolite::swapchain::Swapchain;
 use ammolite::camera::{self, Camera, PitchYawCamera3};
 use ammolite_math::{Vector, Homogeneous, Projected, Matrix, AffineTransformation, Rotation3, mat4, Mat4, Vec3};
 use smallvec::SmallVec;
 use openxr::{self as xr, ViewConfigurationType, EventDataBuffer};
+use crate::vm::event::{
+    Event as MetaviewEvent,
+    DeviceStore,
+    IntoWithDeviceStore,
+};
 
 pub struct MediumData {
     pub uniform: UniformMediumData,
@@ -22,12 +31,14 @@ pub struct UniformMediumData {
     pub camera: Rc<RefCell<dyn Camera>>,
     pub forward: Rc<RefCell<Vec3>>,
     pub origin: Rc<RefCell<Vec3>>,
+    pub device_store: Rc<RefCell<DeviceStore>>,
+    pub event_sender: Sender<MetaviewEvent>,
 }
 
 pub enum SpecializedMediumData {
     Window {
         window: Option<Arc<Surface<Window>>>,
-        window_events_loop: Rc<RefCell<EventsLoop>>,
+        window_events_loop: Rc<RefCell<EventLoop<()>>>,
         pressed_keys: HashSet<VirtualKeyCode>,
         pressed_mouse_buttons: HashSet<MouseButton>,
         cursor_capture: bool,
@@ -41,19 +52,23 @@ pub enum SpecializedMediumData {
 impl MediumData {
     pub fn new_window(
         camera: Rc<RefCell<dyn Camera>>,
-        window_events_loop: Rc<RefCell<EventsLoop>>,
+        device_store: Rc<RefCell<DeviceStore>>,
+        event_sender: Sender<MetaviewEvent>,
+        window_events_loop: Rc<RefCell<EventLoop<()>>>,
     ) -> Self {
         Self {
-            uniform: UniformMediumData::new(camera),
+            uniform: UniformMediumData::new(camera, device_store, event_sender),
             specialized: SpecializedMediumData::new_window(window_events_loop),
         }
     }
 
     pub fn new_stereo_hmd(
         camera: Rc<RefCell<dyn Camera>>,
+        device_store: Rc<RefCell<DeviceStore>>,
+        event_sender: Sender<MetaviewEvent>,
     ) -> Self {
         Self {
-            uniform: UniformMediumData::new(camera),
+            uniform: UniformMediumData::new(camera, device_store, event_sender),
             specialized: SpecializedMediumData::new_stereo_hmd(),
         }
     }
@@ -62,18 +77,22 @@ impl MediumData {
 impl UniformMediumData {
     pub fn new(
         camera: Rc<RefCell<dyn Camera>>,
+        device_store: Rc<RefCell<DeviceStore>>,
+        event_sender: Sender<MetaviewEvent>,
     ) -> Self {
         Self {
             camera,
             forward: Rc::new(RefCell::new([0.0, 0.0, 1.0].into())),
             origin: Rc::new(RefCell::new(Vec3::ZERO)),
+            device_store,
+            event_sender,
         }
     }
 }
 
 impl SpecializedMediumData {
     pub fn new_window(
-        window_events_loop: Rc<RefCell<EventsLoop>>,
+        window_events_loop: Rc<RefCell<EventLoop<()>>>,
     ) -> Self {
         Self::Window {
             window: None,
@@ -138,6 +157,8 @@ impl ammolite::MediumData for MediumData {
             ref mut specialized,
         } = self;
 
+        let mut device_store = uniform.device_store.borrow_mut();
+
         match specialized {
             SpecializedMediumData::Window {
                 window,
@@ -149,7 +170,7 @@ impl ammolite::MediumData for MediumData {
                 let mut mouse_delta = [0.0, 0.0];
                 let mut result = SmallVec::new();
 
-                window_events_loop.clone().as_ref().borrow_mut().poll_events(|ev| {
+                window_events_loop.clone().as_ref().borrow_mut().run_return(|ev, window_target, control_flow| {
                     match ev {
                         Event::WindowEvent {
                             event: WindowEvent::KeyboardInput {
@@ -234,7 +255,15 @@ impl ammolite::MediumData for MediumData {
                             result.push(HandleEventsCommand::RecreateSwapchain(0));
                         }
 
+                        Event::MainEventsCleared => {
+                            *control_flow = ControlFlow::Exit;
+                        }
+
                         _ => ()
+                    }
+
+                    if let Some(metaview_event) = ev.into_with_device_store(&mut device_store) {
+                        uniform.event_sender.send(metaview_event);
                     }
                 });
 
@@ -260,6 +289,10 @@ impl ammolite::MediumData for MediumData {
                         xr::Event::VisibilityMaskChangedKHR(_) => println!("XR Event: VisibilityMaskChangedKHR"),
                         xr::Event::InteractionProfileChanged(_) => println!("XR Event: InteractionProfileChanged"),
                         _ => (),
+                    }
+
+                    if let Some(metaview_event) = event.into_with_device_store(&mut device_store) {
+                        uniform.event_sender.send(metaview_event);
                     }
                 }
 

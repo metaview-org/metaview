@@ -1,6 +1,12 @@
 //! TODO:
+//! * Example App #2 -- Interactions with entities
+//! * Asynchronous execution of applications
 //! * Convert command message passing using the exports to exports/imports
 //!   (see wasmtime-api and wasmtime-interface-types)
+//! * Camera movement (App prioritization?)
+//! * Applications as libraries? Inter-application communication?
+//!
+//! Most likely cancelled because of the transition to webgpu:
 //! * Add entity deletion
 //! * Figure out a way to represent point lights:
 //!   - abuse glTF scenes, which you can use to store light sources with;
@@ -12,7 +18,10 @@
 
 use std::rc::Rc;
 use std::cell::RefCell;
-use winit::{EventsLoop, WindowBuilder};
+use winit::{
+    event_loop::EventLoop,
+    window::WindowBuilder,
+};
 use std::time::Instant;
 use winit::dpi::PhysicalSize;
 use ammolite::{Ammolite, WorldSpaceModel, UninitializedWindowMedium, UninitializedStereoHmdMedium};
@@ -24,6 +33,7 @@ use specs_hierarchy::HierarchySystem;
 use crate::medium::{MediumData, SpecializedMediumData};
 use crate::ecs::*;
 use crate::vm::{Mapp, MappExports, MappContainer};
+use crate::vm::event::{DeviceStore, EventDistributor};
 
 pub mod medium;
 pub mod ecs;
@@ -43,31 +53,38 @@ lazy_static! {
 
 fn main() {
     // Check arguments
-    let mapp_path = std::env::args().nth(1)
-        .expect("Path to a Metaview application not provided.");
+    let mapp_paths = std::env::args().skip(1)
+        .collect::<Vec<_>>();
+
+    if mapp_paths.is_empty() {
+        eprintln!("A path to at least one Metaview application must be provided.");
+        return;
+    }
 
     // Build Ammolite
-    let events_loop = EventsLoop::new();
-    let primary_monitor = events_loop.get_primary_monitor();
-    let events_loop = Rc::new(RefCell::new(events_loop));
+    let event_loop = EventLoop::new();
+    let device_store = Rc::new(RefCell::new(DeviceStore::new()));
+    let event_distributor = EventDistributor::new();
+    let primary_monitor = event_loop.primary_monitor();
+    let event_loop = Rc::new(RefCell::new(event_loop));
     let camera = Rc::new(RefCell::new(PitchYawCamera3::new()));
     let mut hmd_poses: Vec<(Rc<RefCell<Vec3>>, Rc<RefCell<Vec3>>)> = Vec::new();
     let uwm = UninitializedWindowMedium {
-        events_loop: events_loop.clone(),
+        events_loop: event_loop.clone(),
         window_builder: WindowBuilder::new()
             .with_title("metaview")
-            .with_dimensions(
+            .with_inner_size(
                 PhysicalSize::new(1280.0, 720.0)
-                .to_logical(primary_monitor.get_hidpi_factor())
+                .to_logical::<f64>(primary_monitor.scale_factor())
             ),
         window_handler: Some(Box::new(|window, data| {
             if let MediumData { specialized: SpecializedMediumData::Window { window: current_window, .. }, .. } = data {
                 *current_window = Some(window.clone());
             }
 
-            window.window().hide_cursor(true);
+            window.window().set_cursor_visible(false);
         })),
-        data: MediumData::new_window(camera.clone(), events_loop),
+        data: MediumData::new_window(camera.clone(), device_store.clone(), event_distributor.create_sender(), event_loop),
     };
     let mut ammolite = Ammolite::<MediumData>::builder(&PACKAGE_NAME, *PACKAGE_VERSION)
         .initialize_openxr()
@@ -91,7 +108,7 @@ fn main() {
                 }
             })),
             data: {
-                let data = MediumData::new_stereo_hmd(camera.clone());
+                let data = MediumData::new_stereo_hmd(camera.clone(), device_store.clone(), event_distributor.create_sender());
                 hmd_poses.push((data.uniform.origin.clone(), data.uniform.forward.clone()));
                 data
             },
@@ -119,17 +136,21 @@ fn main() {
 
     world.insert(ResourceSceneRoot(scene_root));
 
-    // Load Mapp
-    let mapp_exports = MappExports::load_file(mapp_path)
-        .expect("Could not load the Example MApp.");
-    let mapp = Mapp::initialize(mapp_exports);
-    let mut mappc = MappContainer::new(mapp, &mut world);
-    // println!("{:?}", mapp.test("1".to_string()));
-    // println!("{:?}", mapp.test("2".to_string()));
-    // println!("{:?}", mapp.test("3".to_string()));
+    // Load Mapps
+    let mut mappcs = mapp_paths.into_iter().map(|mapp_path| {
+        let mapp_exports = MappExports::load_file(mapp_path)
+            .expect("Could not load the Example MApp.");
+        let mapp = Mapp::initialize(mapp_exports);
 
-    mappc.process_io();
-    mappc.process_commands(&mut ammolite, &mut world, &camera, true);
+        MappContainer::new(mapp, &mut world)
+    }).collect::<Vec<_>>();
+
+    for mappc in &mut mappcs {
+        mappc.process_io();
+        mappc.process_commands(&mut ammolite, &mut world, &camera, true);
+    }
+
+    event_distributor.distribute_events(&mut mappcs[..], &mut ammolite, &mut world, &camera);
 
     // Event loop
     let init_instant = Instant::now();
@@ -151,9 +172,13 @@ fn main() {
             break;
         }
 
-        mappc.mapp.update(elapsed);
-        mappc.process_io();
-        mappc.process_commands(&mut ammolite, &mut world, &camera, true);
+        for mappc in &mut mappcs {
+            mappc.mapp.update(elapsed);
+            mappc.process_io();
+            mappc.process_commands(&mut ammolite, &mut world, &camera, true);
+        }
+
+        event_distributor.distribute_events(&mut mappcs[..], &mut ammolite, &mut world, &camera);
 
         dispatcher.dispatch(&mut world);
 

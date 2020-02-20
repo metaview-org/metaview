@@ -13,6 +13,8 @@ use mlib::*;
 use crate::ecs::*;
 use crate::medium::MediumData;
 
+pub mod event;
+
 #[mapp(host)]
 pub struct Mapp;
 
@@ -40,7 +42,15 @@ impl MappContainer {
         }
     }
 
-    pub fn process_commands(&mut self, ammolite: &mut Ammolite<MediumData>, world: &mut World, camera: &Rc<RefCell<PitchYawCamera3>>, process_io: bool) {
+    pub fn send_event(&mut self, event: Event, ammolite: &mut Ammolite<MediumData>, world: &mut World, camera: &Rc<RefCell<PitchYawCamera3>>) {
+        self.mapp.receive_event(event);
+        self.process_commands(ammolite, world, camera, true);
+    }
+
+    /// Returns `true`, if the application should be closed, otherwise returns `false`.
+    pub fn process_commands(&mut self, ammolite: &mut Ammolite<MediumData>, world: &mut World, camera: &Rc<RefCell<PitchYawCamera3>>, process_io: bool) -> bool {
+        let mut exit = false;
+
         while let Some(command) = self.mapp.send_command() {
             if process_io {
                 self.process_io();
@@ -55,6 +65,10 @@ impl MappContainer {
 
             let Command { id, kind } = command;
             let response_kind = match kind {
+                CommandKind::Exit => {
+                    exit = true;
+                    break;
+                },
                 CommandKind::ModelCreate { data } => {
                     let bytes = data.into_bytes();
                     let model_index = self.models.len();
@@ -234,6 +248,8 @@ impl MappContainer {
         if process_io {
             self.process_io();
         }
+
+        exit
     }
 
     pub fn process_io(&mut self) {
