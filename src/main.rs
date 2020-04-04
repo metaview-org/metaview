@@ -30,6 +30,7 @@ use ammolite::camera::PitchYawCamera3;
 use lazy_static::lazy_static;
 use specs::prelude::*;
 use specs_hierarchy::HierarchySystem;
+use ::mlib::MappInterface;
 use crate::medium::{MediumData, SpecializedMediumData};
 use crate::ecs::*;
 use crate::vm::{Mapp, MappExports, MappContainer};
@@ -55,11 +56,6 @@ fn main() {
     // Check arguments
     let mapp_paths = std::env::args().skip(1)
         .collect::<Vec<_>>();
-
-    if mapp_paths.is_empty() {
-        eprintln!("A path to at least one Metaview application must be provided.");
-        return;
-    }
 
     // Build Ammolite
     let event_loop = EventLoop::new();
@@ -142,8 +138,22 @@ fn main() {
             .expect("Could not load the Example MApp.");
         let mapp = Mapp::initialize(mapp_exports);
 
-        MappContainer::new(mapp, &mut world)
+        MappContainer::from_wasm(mapp, &mut world)
     }).collect::<Vec<_>>();
+
+    #[cfg(feature = "native-example-mapp")]
+    mappcs.push({
+        use example_mapp::{Mapp, ExampleMapp};
+        let mapp = ExampleMapp::new();
+        let mapp_interface: Box<dyn MappInterface> = Box::new(mapp);
+
+        MappContainer::new(mapp_interface, &mut world)
+    });
+
+    if mappcs.is_empty() {
+        eprintln!("At least one metaview application must be specified.");
+        return;
+    }
 
     for mappc in &mut mappcs {
         mappc.process_io();

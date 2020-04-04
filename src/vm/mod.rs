@@ -9,7 +9,7 @@ use ammolite::camera::{Camera, PitchYawCamera3};
 use specs::{World, WorldExt, world::{Builder, EntitiesRes}};
 use serde::{Deserialize, Serialize};
 use json5::{from_str, to_string};
-use mlib::*;
+use ::mlib::*;
 use crate::ecs::*;
 use crate::medium::MediumData;
 
@@ -17,15 +17,16 @@ pub mod event;
 
 #[mapp(host)]
 pub struct Mapp;
+pub struct NativeMapp;
 
 pub struct MappContainer {
-    pub mapp: Mapp,
+    pub mapp: Box<dyn MappInterface>,
     pub models: Vec<Arc<ammolite::model::Model>>,
     pub root_entity: specs::Entity,
 }
 
 impl MappContainer {
-    pub fn new(mapp: Mapp, world: &mut World) -> Self {
+    pub fn new(mapp_interface: Box<dyn MappInterface>, world: &mut World) -> Self {
         let resource_scene_root = world.fetch::<ResourceSceneRoot>().0;
         let root_entity = world.create_entity()
             .with(ComponentParent {
@@ -36,10 +37,14 @@ impl MappContainer {
             })
             .build();
         Self {
-            mapp,
+            mapp: mapp_interface,
             models: Vec::new(),
             root_entity,
         }
+    }
+
+    pub fn from_wasm(mapp: Mapp, world: &mut World) -> Self {
+        Self::new(Box::new(mapp), world)
     }
 
     pub fn send_event(&mut self, event: Event, ammolite: &mut Ammolite<MediumData>, world: &mut World, camera: &Rc<RefCell<PitchYawCamera3>>) {

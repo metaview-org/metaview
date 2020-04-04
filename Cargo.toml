@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Jakub Hlusička <limeth@protonmail.com>"]
 edition = "2018"
 
+[features]
+native-example-mapp = [ "example-mapp" ]
+
 [dependencies]
 ammolite = { path = "../ammolite", default-features = false }
 ammolite-math = { path = "../ammolite/ammolite-math", default-features = false }
@@ -21,3 +24,5 @@ wasmtime-rust = "0.8.0"
 serde = { version = "1.0", features = ["derive"] }
 json5 = "0.2.5"
 mlib = { path = "../mlib" }
+
+example-mapp = { path = "../example-mapp", optional = true }
