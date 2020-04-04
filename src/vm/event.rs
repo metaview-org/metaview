@@ -400,6 +400,9 @@ impl<'a> IntoWithDeviceStore<Option<mlib::WindowEvent>> for we::WindowEvent<'a> 
                 input: input.into_with_device_store(device_store),
                 is_synthetic,
             },
+            we::WindowEvent::ModifiersChanged(state) => mlib::WindowEvent::ModifiersChanged(
+                state.into_with_device_store(device_store),
+            ),
             #[allow(deprecated)]
             we::WindowEvent::CursorMoved {
                 device_id,
@@ -509,9 +512,6 @@ impl IntoWithDeviceStore<Option<mlib::DeviceEvent>> for we::DeviceEvent {
             },
             we::DeviceEvent::Key(input) => mlib::DeviceEvent::Key(
                 input.into_with_device_store(device_store),
-            ),
-            we::DeviceEvent::ModifiersChanged(state) => mlib::DeviceEvent::ModifiersChanged(
-                state.into_with_device_store(device_store),
             ),
             we::DeviceEvent::Text {
                 codepoint,

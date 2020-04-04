@@ -5,11 +5,12 @@ authors = ["Jakub Hlusička <limeth@protonmail.com>"]
 edition = "2018"
 
 [dependencies]
-ammolite = { path = "../ammolite" }
-ammolite-math = { path = "../ammolite/ammolite-math" }
+ammolite = { path = "../ammolite", default-features = false }
+ammolite-math = { path = "../ammolite/ammolite-math", default-features = false }
 vulkano = { path = "../vulkano/vulkano" }
 openxr = { path = "../openxrs/openxr" }
-winit = "0.21.0"
+# winit = "0.22.0"
+winit = { git = "https://github.com/rust-windowing/winit.git" }
 paste = "0.1"
 smallvec = "0.6.10"
 lazy_static = "1.4.0"
