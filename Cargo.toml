@@ -4,14 +4,26 @@ version = "0.1.0"
 authors = ["Jakub Hlusička <limeth@protonmail.com>"]
 edition = "2018"
 
+[lib]
+name = "metaview_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "metaview_bin"
+path = "src/main.rs"
+
 [features]
-native-example-mapp = [ "example-mapp" ]
+native-example-mapp = [ "example-mapp", "example-mapp-2" ]
 
 [dependencies]
-ammolite = { path = "../ammolite", default-features = false }
-ammolite-math = { path = "../ammolite/ammolite-math", default-features = false }
-vulkano = { path = "../vulkano/vulkano" }
-openxr = { path = "../openxrs/openxr" }
+ammolite = { git = "https://github.com/metaview-org/ammolite", default-features = false }
+# ammolite = { path = "../ammolite", default-features = false }
+ammolite-math = { git = "https://github.com/metaview-org/ammolite", default-features = false }
+# ammolite-math = { path = "../ammolite/ammolite-math", default-features = false }
+vulkano = { git = "https://github.com/Limeth/vulkano", branch = "feature-swapchain-image-trait" }
+# vulkano = { path = "../vulkano/vulkano" }
+openxr = "0.9.4"
+# openxr = { path = "../openxrs/openxr" }
 # winit = "0.22.0"
 winit = { git = "https://github.com/rust-windowing/winit.git" }
 paste = "0.1"
@@ -23,6 +35,16 @@ specs-hierarchy = "0.5.1"
 wasmtime-rust = "0.8.0"
 serde = { version = "1.0", features = ["derive"] }
 json5 = "0.2.5"
-mlib = { path = "../mlib" }
+mlib = { git = "https://github.com/metaview-org/mlib" }
+# mlib = { path = "../mlib" }
 
 example-mapp = { path = "../example-mapp", optional = true }
+example-mapp-2 = { path = "../example-mapp-2", optional = true }
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = 1
+
+[profile.dev.package.ammolite]
+opt-level = 0
+debug = 2

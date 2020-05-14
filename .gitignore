@@ -9,6 +9,7 @@ calinfo/
 flamegraph.svg
 perf.data
 perf.data.old
+benchmarks/
 
 target/
 **/*.rs.bk
